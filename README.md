@@ -1,50 +1,72 @@
-# DoOrDonate
+# DoOrDonate 🎯
 
 มัดจำเป้าหมายชีวิตด้วย ETH — ทำสำเร็จได้เงินคืน ไม่สำเร็จเงินถูกส่งให้มูลนิธิ
-ใช้ Remix IDE สำหรับ Smart Contract และ Next.js สำหรับหน้าเว็บ (เครือข่าย Sepolia Testnet)
+ใช้ Remix IDE สำหรับ Smart Contract และ **React (Vite) + Tailwind CSS** สำหรับหน้าเว็บ (เครือข่าย Ethereum Sepolia Testnet)
 
 ```
-contracts/DoOrDonate.sol    Smart Contract (เอาไปวางใน Remix)
-web/                        หน้าเว็บ Next.js
+contracts/DoOrDonate.sol    Smart Contract (สำหรับ Compile & Deploy ใน Remix)
+web/                        หน้าเว็บ React SPA (Vite + Wagmi + Tailwind CSS)
 ```
+
+---
 
 ## สิ่งที่ต้องมี
 - Node.js 18 ขึ้นไป
-- MetaMask และเปลี่ยนเครือข่ายเป็น Sepolia
-- Sepolia ETH ฟรีจาก faucet (ค้นหา "Sepolia faucet")
+- MetaMask Extension บนเบราว์เซอร์ พร้อมเลือกเครือข่าย **Sepolia Testnet**
+- Sepolia ETH ฟรีจาก faucet (เช่น [Google Cloud Sepolia Faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) หรือ [Alchemy Faucet](https://www.alchemy.com/faucets/ethereum-sepolia))
+
+---
 
 ## ขั้นที่ 1: Deploy Smart Contract ด้วย Remix
-1. เปิด https://remix.ethereum.org
-2. สร้างไฟล์ใหม่ชื่อ `DoOrDonate.sol` แล้วคัดลอกโค้ดจาก `contracts/DoOrDonate.sol` ไปวาง
-3. แท็บ **Solidity Compiler** เลือกเวอร์ชัน 0.8.20 ขึ้นไป แล้วกด **Compile**
-4. แท็บ **Deploy & Run** ตั้ง Environment เป็น **Injected Provider - MetaMask** (ตรวจว่าเป็น Sepolia)
-5. เลือก contract **DoOrDonate** แล้วกด **Deploy** และยืนยันใน MetaMask
-6. ที่ช่อง Deployed Contracts กดไอคอนคัดลอก **address** เก็บไว้
+1. เปิด [Remix IDE](https://remix.ethereum.org)
+2. สร้างไฟล์ใหม่ชื่อ `DoOrDonate.sol` ในโฟลเดอร์ `contracts` แล้วคัดลอกโค้ดจาก `contracts/DoOrDonate.sol` ไปวาง
+3. ที่แท็บ **Solidity Compiler**: เลือกคอมไพเลอร์เวอร์ชัน `0.8.20` ขึ้นไป แล้วกด **Compile DoOrDonate.sol**
+4. ที่แท็บ **Deploy & Run Transactions**:
+   - Environment: เลือก **Injected Provider - MetaMask**
+   - ตรวจสอบว่า MetaMask เชื่อมต่อกับเครือข่าย **Sepolia** (Chain ID 11155111)
+   - Contract: เลือก **DoOrDonate**
+   - กดปุ่ม **Deploy** และกดยืนยันธุรกรรมใน MetaMask
+5. เมื่อ Deploy เสร็จแล้ว ที่กล่อง **Deployed Contracts** ด้านล่าง กดไอคอนคัดลอก **Contract Address** เก็บไว้
 
-## ขั้นที่ 2: รันหน้าเว็บ
+---
+
+## ขั้นที่ 2: รันหน้าเว็บ React
 ```bash
 cd web
 npm install
-cp .env.example .env.local
 ```
-เปิดไฟล์ `.env.local` แล้วใส่ค่า 2 อย่าง
-- `NEXT_PUBLIC_CONTRACT_ADDRESS` = address จากขั้นที่ 1
-- `NEXT_PUBLIC_WC_PROJECT_ID` = Project ID ฟรีจาก https://cloud.reown.com
 
-จากนั้นรัน
+คุณสามารถระบุ Contract Address ได้ 2 วิธี:
+- **วิธีที่ 1 (ผ่านหน้าเว็บโดยตรง):** รันหน้าเว็บขึ้นมา แล้วใส่ Address ในกล่องแจ้งเตือนหรือกดปุ่ม ⚙️ ตั้งค่าบน Navbar
+- **วิธีที่ 2 (ผ่านไฟล์ .env):**
+  ```bash
+  cp .env.example .env
+  ```
+  แล้วเปิดไฟล์ `.env` ใส่ค่า:
+  ```env
+  VITE_CONTRACT_ADDRESS=0xเลข_Contract_ที่_Deploy_มา
+  ```
+
+จากนั้นรัน Development Server:
 ```bash
 npm run dev
 ```
-เปิด http://localhost:3000
+เปิดเบราว์เซอร์ไปที่ [http://localhost:3000](http://localhost:3000)
 
-## วิธีใช้งาน
-1. กด Connect Wallet
-2. กรอกชื่อเป้าหมาย ระยะเวลา เงินมัดจำ และเลือกมูลนิธิ แล้วกดสร้าง
-3. แท็บ "เป้าหมายที่กำลังทำ": กด "ส่งหลักฐาน" แล้วกด "ขอรับเงินคืน" ก่อนหมดเวลา
-4. ถ้าหมดเวลา ใครก็กด "โอนเงินให้มูลนิธิ" ได้
-5. แท็บ "ประวัติ" มีลิงก์ดู Transaction บน Etherscan
+---
 
-## หมายเหตุ
-- รายชื่อมูลนิธิอยู่ใน `web/lib/contract.ts` (เป็นค่าตัวอย่าง แก้ได้)
-- ชื่อเป้าหมาย หลักฐาน และลิงก์ Transaction เก็บในเบราว์เซอร์ ถ้าเปลี่ยนเครื่องจะไม่เห็น
-- ถ้าต้องการทดสอบกรณีหมดเวลาเร็ว ๆ ให้แก้ `1 days` ในสัญญาเป็น `1 minutes` แล้ว Deploy ใหม่
+## จุดเด่นและการทำงานของระบบ
+1. **รองรับเฉพาะ MetaMask โดยตรง:**
+   - กดปุ่ม "เชื่อมต่อ MetaMask" แล้วจะเปิดหน้าต่างยืนยันของ MetaMask ทันที
+   - ไม่มี Pop-up "เรียนรู้เพิ่มเติม" หรือขั้นตอนส่วนเกินของ WalletConnect/RainbowKit
+2. **ระบบเตือนสลับเครือข่ายอัตโนมัติ:**
+   - หากผู้ใช้เชื่อมต่อผิดเครือข่าย ระบบจะมีแถบแจ้งเตือนและปุ่มคลิกเดียวเพื่อสลับไปยัง Sepolia ใน MetaMask ได้ทันที
+3. **ป้องกันข้อผิดพลาดในการทำธุรกรรม:**
+   - ป้องกันการระบุกระเป๋ามูลนิธิเป็นกระเป๋าของตนเอง (ตรงตามเงื่อนไขของ Smart Contract)
+   - ตรวจสอบรูปแบบ Address และจำนวนเงินอย่างแม่นยำ
+4. **การบันทึกข้อมูลและหลักฐาน (Proof):**
+   - มี Modal สำหรับแนบลิงก์รูปภาพ, Strava, GitHub หรือข้อความบันทึกความสำเร็จ
+   - ป้องกันการบันทึกข้อมูลผิดพลาดกรณีผู้ใช้ยกเลิกการกดยืนยันใน MetaMask
+5. **Dashboard & Countdown Timer:**
+   - มีการคำนวณและแสดงสถิติยอดเงินมัดจำ, เป้าหมายที่กำลังทำ, เป้าหมายที่ทำสำเร็จ, และเงินที่บริจาคมูลนิธิ
+   - ตัวนับเวลาถอยหลังแบบเรียลไทม์ พร้อม Progress Bar แสดงระยะเวลาที่ผ่านไป
