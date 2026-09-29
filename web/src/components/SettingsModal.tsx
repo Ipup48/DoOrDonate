@@ -37,7 +37,11 @@ export const SettingsModal: React.FC<Props> = ({ isOpen, onClose, onUpdated }) =
 
   const handleReset = () => {
     setCustomContractAddress('');
-    setAddressInput(import.meta.env.VITE_CONTRACT_ADDRESS || '');
+    setAddressInput(
+      (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_CONTRACT_ADDRESS) ||
+      (typeof process !== 'undefined' && process.env?.VITE_CONTRACT_ADDRESS) ||
+      ''
+    );
     setError('');
   };
 

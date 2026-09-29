@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useBalance, useWatchContractEvent } from 'wagmi';
+import { sepolia } from 'wagmi/chains';
 import { parseEventLogs } from 'viem';
-import { getContractAddress, ABI } from '@/lib/contract';
+import { getContractAddress, ABI, ABI_V1, ABI_V2, ABI_STATUS, ABI_EVENTS } from '@/lib/contract';
 import {
   saveGoalMeta,
+  getGoalMeta,
+  updateGoalStatus,
   getPendingGoalCreation,
   clearPendingGoalCreation,
   getAllGoalsMeta,
@@ -14,6 +19,7 @@ import { NetworkBanner } from '@/components/NetworkBanner';
 import { ContractAddressBanner } from '@/components/ContractAddressBanner';
 import { StatsDashboard } from '@/components/StatsDashboard';
 import { GoalCard, Goal } from '@/components/GoalCard';
+import { HistoryCard } from '@/components/HistoryCard';
 import { CreateGoalModal } from '@/components/CreateGoalModal';
 import { ProofModal } from '@/components/ProofModal';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -22,7 +28,7 @@ import { ToastContainer, ToastMessage } from '@/components/Toast';
 
 import { Plus, Target, History, RefreshCw, Search, Sparkles, ShieldCheck } from 'lucide-react';
 
-export default function App() {
+export default function Home() {
   const { address, isConnected } = useAccount();
   const contractAddress = getContractAddress();
 
@@ -30,6 +36,7 @@ export default function App() {
   const [tab, setTab] = useState<'active' | 'history'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [now, setNow] = useState(Math.floor(Date.now() / 1000));
+  const [metaVersion, setMetaVersion] = useState(0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -65,34 +72,191 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Read goals from contract
-  const {
-    data: rawGoals,
-    refetch,
-    isLoading: isReadingGoals,
-  } = useReadContract({
-    address: contractAddress,
-    abi: ABI,
-    functionName: 'getAllGoals',
-  });
-
-  const allGoals = ((rawGoals as Goal[]) || []).map((g) => ({
-    id: BigInt(g.id),
-    user: g.user,
-    amount: BigInt(g.amount),
-    deadline: BigInt(g.deadline),
-    charityWallet: g.charityWallet,
-    isCompleted: Boolean(g.isCompleted),
-    isClaimed: Boolean(g.isClaimed),
-  }));
-
-  // Filter goals of connected user
-  const userGoals = allGoals.filter(
-    (g) => address && g.user.toLowerCase() === address.toLowerCase()
+  // ตรวจสอบความถูกต้องของ Contract Address
+  const isContractValid = Boolean(
+    contractAddress &&
+    contractAddress !== '0x0000000000000000000000000000000000000000'
   );
 
-  const activeGoals = userGoals.filter((g) => !g.isClaimed).reverse();
-  const historyGoals = userGoals.filter((g) => g.isClaimed).reverse();
+  // 1. อ่านเป้าหมายด้วย ABI STATUS (สำหรับสัญญาที่มี status: uint8 หรือ GoalStatus)
+  const {
+    data: rawGoalsStatus,
+    refetch: refetchStatus,
+  } = useReadContract({
+    address: contractAddress,
+    abi: ABI_STATUS,
+    functionName: 'getAllGoals',
+    query: {
+      enabled: isContractValid,
+      refetchInterval: 3000,
+    },
+  });
+
+  // 2. อ่านเป้าหมายด้วย ABI V2 (สำหรับสัญญาที่มี createdAt ใน struct Goal)
+  const {
+    data: rawGoalsV2,
+    refetch: refetchV2,
+    isLoading: isReadingV2,
+  } = useReadContract({
+    address: contractAddress,
+    abi: ABI_V2,
+    functionName: 'getAllGoals',
+    query: {
+      enabled: isContractValid,
+      refetchInterval: 3000,
+    },
+  });
+
+  // 3. อ่านเป้าหมายด้วย ABI V1 (สำหรับสัญญาเวอร์ชันเดิมที่ deploy บน Sepolia)
+  const {
+    data: rawGoalsV1,
+    refetch: refetchV1,
+    isLoading: isReadingV1,
+  } = useReadContract({
+    address: contractAddress,
+    abi: ABI_V1,
+    functionName: 'getAllGoals',
+    query: {
+      enabled: isContractValid,
+      refetchInterval: 3000,
+    },
+  });
+
+  // ดึงยอดคงเหลือ Sepolia ETH เพื่อรองรับการ refetch ทันที
+  const { refetch: refetchBalance } = useBalance({
+    address,
+    chainId: sepolia.id,
+    query: {
+      enabled: Boolean(address),
+      refetchInterval: 5000,
+    },
+  });
+
+  // รวมข้อมูลจากเวอร์ชันที่อ่านสำเร็จ
+  const rawGoals = (rawGoalsStatus as any[]) || (rawGoalsV2 as any[]) || (rawGoalsV1 as any[]) || [];
+  const isReadingGoals = Boolean(isContractValid && !rawGoalsStatus && !rawGoalsV2 && !rawGoalsV1 && (isReadingV2 || isReadingV1));
+
+  const refetch = async () => {
+    setMetaVersion((v) => v + 1);
+    await Promise.allSettled([refetchStatus(), refetchV2(), refetchV1(), refetchBalance()]);
+  };
+
+  // ดักจับ Event จากบล็อกเชนแบบ Real-time (Auto Sync)
+  useWatchContractEvent({
+    address: contractAddress,
+    abi: ABI,
+    eventName: 'GoalCreated',
+    enabled: isContractValid,
+    onLogs() {
+      refetch();
+    },
+  });
+
+  useWatchContractEvent({
+    address: contractAddress,
+    abi: ABI,
+    eventName: 'GoalCompleted',
+    enabled: isContractValid,
+    onLogs() {
+      refetch();
+    },
+  });
+
+  useWatchContractEvent({
+    address: contractAddress,
+    abi: ABI,
+    eventName: 'GoalFailed',
+    enabled: isContractValid,
+    onLogs() {
+      refetch();
+    },
+  });
+
+  const allGoals: Goal[] = useMemo(() => {
+    const allMeta = getAllGoalsMeta();
+    return rawGoals.map((g: any) => {
+      const id = BigInt(g.id);
+      const meta = allMeta[id.toString()] || {};
+      const createdAt = (g.createdAt !== undefined && g.createdAt !== null && BigInt(g.createdAt) > 0n)
+        ? BigInt(g.createdAt)
+        : (meta.createdAt ? BigInt(meta.createdAt) : 0n);
+
+      const userAddress = g.user || g.creator || '';
+      const rawAmount = g.amount !== undefined ? g.amount : (g.depositAmount !== undefined ? g.depositAmount : 0n);
+      const amount = BigInt(rawAmount);
+
+      // คำนวณ status (0: Active, 1: Completed, 2: Failed/Donated)
+      let status = 0;
+
+      // 1. ตรวจสอบสถานะที่เสร็จสิ้นจากสัญญาบล็อกเชน (status 1 หรือ 2 หรือ boolean claims)
+      if (g.status !== undefined && g.status !== null && (Number(g.status) === 1 || Number(g.status) === 2)) {
+        status = Number(g.status);
+      } else if (Boolean(g.isClaimed) && !Boolean(g.isCompleted)) {
+        status = 2;
+      } else if (Boolean(g.isClaimed) && Boolean(g.isCompleted)) {
+        status = 1;
+      }
+      // 2. ตรวจสอบสถานะจาก LocalStorage เมื่อธุรกรรมพึ่งสำเร็จ (status 1 หรือ 2)
+      else if (meta.status !== undefined && meta.status !== null && (Number(meta.status) === 1 || Number(meta.status) === 2)) {
+        status = Number(meta.status);
+      } else if (Boolean(meta.isClaimed) && !Boolean(meta.isCompleted)) {
+        status = 2;
+      } else if (Boolean(meta.isClaimed) && Boolean(meta.isCompleted)) {
+        status = 1;
+      } else if (meta.txHashAction && !meta.isCompleted && !g.isCompleted) {
+        status = 2;
+      }
+      // 3. สถานะเริ่มต้น Active (0)
+      else if (g.status !== undefined && g.status !== null) {
+        status = Number(g.status);
+      } else if (meta.status !== undefined && meta.status !== null) {
+        status = Number(meta.status);
+      }
+
+      const isCompleted = status === 1;
+      const isClaimed = status === 1 || status === 2 || Boolean(g.isClaimed) || Boolean(meta.isClaimed);
+      const fallbackTitle = (Number(status) === 2 || meta.status === 2 || meta.isExpiredDemo)
+        ? (meta.title || `[Demo] บริจาคเข้ามูลนิธิ #${id.toString()}`)
+        : (meta.isDemo || (g as any).isDemo)
+        ? (meta.title || `[Demo] สาธิตต่อหน้าอาจารย์ (Instant Claim)`)
+        : (meta.title || `[Demo] เป้าหมาย #${id.toString()}`);
+      const displayTitle = g.title || meta.title || fallbackTitle;
+
+      return {
+        id,
+        user: userAddress,
+        creator: userAddress,
+        amount,
+        depositAmount: amount,
+        createdAt,
+        deadline: BigInt(g.deadline !== undefined ? g.deadline : (meta.deadline || 0)),
+        charityWallet: g.charityWallet || meta.charityWallet || '',
+        isCompleted,
+        isClaimed,
+        status,
+        title: displayTitle,
+      };
+    });
+  }, [rawGoals, metaVersion]);
+
+  // Filter goals of connected user (รองรับทั้ง user และ creator)
+  const userGoals = allGoals.filter(
+    (g) => address && ((g.user && g.user.toLowerCase() === address.toLowerCase()) || ((g as any).creator && (g as any).creator.toLowerCase() === address.toLowerCase()))
+  );
+
+  // แท็บ "เป้าหมายที่กำลังทำ": status === 0 (Active) และยังไม่ได้เคลม
+  // แสดงเป้าหมายของผู้ใช้เป็นหลัก หากไม่มีแต่ในระบบมี ให้แสดง allGoals เพื่อรองรับการนำเสนอเดโม
+  const activeGoals = (userGoals.length > 0 ? userGoals : allGoals).filter(
+    (g) => Number(g.status) === 0 && !g.isClaimed
+  ).reverse();
+
+  // แท็บ "ประวัติสำเร็จ & บริจาค": รวมทั้ง status 1 (Completed) และ status 2 (Failed / Donated)
+  const historyGoals = allGoals.filter(
+    (g) => Number(g.status) === 1 || Number(g.status) === 2
+  ).reverse();
+
+  // ยอดรวมแสดงใน Badge แท็บประวัติ (completed + failed)
+  const historyBadgeCount = historyGoals.length;
 
   // Filter with search
   const filterBySearch = (list: Goal[]) => {
@@ -101,8 +265,8 @@ export default function App() {
     const allMeta = getAllGoalsMeta();
     return list.filter((g) => {
       const meta = allMeta[g.id.toString()];
-      const title = meta?.title?.toLowerCase() || '';
-      return title.includes(q) || g.id.toString().includes(q);
+      const t = (g.title || meta?.title || (Number(g.status) === 2 ? `[Demo] บริจาคเข้ามูลนิธิ #${g.id.toString()}` : `[Demo] ทำสำเร็จ #${g.id.toString()}`)).toLowerCase();
+      return t.includes(q) || g.id.toString().includes(q);
     });
   };
 
@@ -113,7 +277,7 @@ export default function App() {
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
 
   // Transaction Receipt Hook
-  const { isLoading: isWaitingTx, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isWaitingTx, isSuccess: isTxSuccess, data: receipt } = useWaitForTransactionReceipt({
     hash: activeTxHash,
   });
 
@@ -124,13 +288,41 @@ export default function App() {
     if (isTxSuccess && activeTxHash) {
       if (actionType === 'create') {
         const pending = getPendingGoalCreation();
-        // หา ID ของเป้าหมายใหม่จากจำนวนเป้าหมายล่าสุด
-        const newGoalId = allGoals.length > 0 ? String(allGoals.length) : '0';
+        let newGoalId: string | null = null;
+
+        // แยกแกะ goalId จาก Event Logs (รองรับทั้ง V1 และ V2)
+        if (receipt) {
+          try {
+            const logs = parseEventLogs({
+              abi: ABI_EVENTS,
+              eventName: 'GoalCreated',
+              logs: receipt.logs,
+            });
+            if (logs.length > 0 && (logs[0] as any).args?.goalId !== undefined) {
+              newGoalId = (logs[0] as any).args.goalId.toString();
+            }
+          } catch (e) {
+            console.warn('Could not parse GoalCreated event log:', e);
+          }
+        }
+
+        // Fallback หา Goal ID จากจำนวนเป้าหมายในระบบ
+        if (!newGoalId) {
+          newGoalId = allGoals.length > 0 ? String(allGoals.length) : '0';
+        }
+
         if (pending) {
           saveGoalMeta(newGoalId, {
-            title: pending.title,
+            title: pending.title || (pending.isExpiredDemo ? '[Demo] เป้าหมายหมดอายุ (ทดสอบบริจาค)' : '[Demo] สาธิตต่อหน้าอาจารย์ (Instant Claim)'),
             createdAt: pending.createdAt,
+            deadline: pending.deadline,
+            charityWallet: pending.charityWallet,
             txHashCreate: activeTxHash,
+            isDemo: pending.isDemo,
+            isExpiredDemo: pending.isExpiredDemo,
+            status: 0,
+            isCompleted: false,
+            isClaimed: false,
           });
           clearPendingGoalCreation();
         }
@@ -141,34 +333,62 @@ export default function App() {
           message: 'เงินมัดจำถูกล็อคไว้ใน Smart Contract เรียบร้อย ขอให้ทำสำเร็จตามที่ตั้งใจ!',
           txHash: activeTxHash,
         });
+
+        // Trigger refetch ทันทีและหน่วงเวลาเล็กน้อยเผื่อ RPC Indexing delay
+        refetch();
+        setTimeout(() => refetch(), 1000);
+        setTimeout(() => refetch(), 3000);
       } else if (actionType === 'refund' && actionGoalId !== null) {
+        updateGoalStatus(actionGoalId, 1, activeTxHash);
+        const currentMeta = getGoalMeta(actionGoalId);
         saveGoalMeta(actionGoalId, {
+          title: currentMeta.title || `[Demo] ทำสำเร็จ #${actionGoalId.toString()}`,
+          status: 1,
+          isCompleted: true,
+          isClaimed: true,
           txHashAction: activeTxHash,
         });
+        setMetaVersion((v) => v + 1);
         addToast({
           type: 'success',
           title: 'ขอรับเงินมัดจำคืนสำเร็จ!',
-          message: 'ยินดีด้วยที่คุณทำตามเป้าหมายได้สำเร็จ เงินมัดจำถูกโอนกลับเข้ากระเป๋าของคุณแล้ว',
+          message: 'ยินดีด้วยที่คุณทำตามเป้าหมายได้สำเร็จ เงินมัดจำถูกโอนกลับเข้ากระเป๋า พร้อมโบนัสเหรียญ WTC โอนเข้ากระเป๋าของคุณแล้ว',
           txHash: activeTxHash,
         });
+        refetch();
+        setTimeout(() => refetch(), 1000);
+        setTimeout(() => refetch(), 3000);
       } else if (actionType === 'donate' && actionGoalId !== null) {
+        // อัปเดตสถานะใน LocalStorage เป็น status: 2 (Failed / Donated) ทันที
+        updateGoalStatus(actionGoalId, 2, activeTxHash);
+
+        // ตรวจสอบให้แน่ใจว่า Demo Expired ได้รับการบันทึก Title และสถานะ status: 2 อย่างสมบูรณ์
+        const currentMeta = getGoalMeta(actionGoalId);
         saveGoalMeta(actionGoalId, {
+          title: currentMeta.title || `[Demo] บริจาคเข้ามูลนิธิ #${actionGoalId.toString()}`,
+          status: 2,
+          isCompleted: false,
+          isClaimed: true,
           txHashAction: activeTxHash,
         });
+
+        setMetaVersion((v) => v + 1);
         addToast({
           type: 'info',
-          title: 'โอนเงินบริจาคให้มูลนิธิเรียบร้อย',
-          message: 'เงินมัดจำได้ถูกส่งมอบให้กับมูลนิธิเพื่อประโยชน์ต่อสังคมแล้ว',
+          title: 'ส่งมอบเงินมัดจำเรียบร้อย',
+          message: 'เงินมัดจำได้ถูกส่งมอบให้กับมูลนิธิหรือสมทบเข้ากองทุนผู้ทำสำเร็จตามที่กำหนดแล้ว',
           txHash: activeTxHash,
         });
+        refetch();
+        setTimeout(() => refetch(), 1000);
+        setTimeout(() => refetch(), 3000);
       }
 
-      refetch();
       setActiveTxHash(undefined);
       setActionGoalId(null);
       setActionType(null);
     }
-  }, [isTxSuccess, activeTxHash]);
+  }, [isTxSuccess, activeTxHash, receipt]);
 
   // Action: Refund
   const handleRefund = async (goalId: bigint) => {
@@ -176,12 +396,27 @@ export default function App() {
       setActionGoalId(goalId);
       setActionType('refund');
 
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi: ABI,
-        functionName: 'completeAndRefund',
-        args: [goalId],
-      });
+      let hash: `0x${string}` | undefined;
+      try {
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: ABI,
+          functionName: 'completeGoal',
+          args: [goalId],
+          gas: 350000n,
+        });
+      } catch (eComp: any) {
+        if (eComp?.message?.includes('User rejected') || eComp?.shortMessage?.includes('User rejected')) {
+          throw eComp;
+        }
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: ABI,
+          functionName: 'completeAndRefund',
+          args: [goalId],
+          gas: 350000n,
+        });
+      }
 
       if (hash) {
         setActiveTxHash(hash);
@@ -213,18 +448,33 @@ export default function App() {
       setActionGoalId(goalId);
       setActionType('donate');
 
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi: ABI,
-        functionName: 'failAndDonate',
-        args: [goalId],
-      });
+      let hash: `0x${string}` | undefined;
+      try {
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: ABI,
+          functionName: 'failGoal',
+          args: [goalId],
+          gas: 350000n,
+        });
+      } catch (eFailGoal: any) {
+        if (eFailGoal?.message?.includes('User rejected') || eFailGoal?.shortMessage?.includes('User rejected')) {
+          throw eFailGoal;
+        }
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: ABI,
+          functionName: 'failAndDonate',
+          args: [goalId],
+          gas: 350000n,
+        });
+      }
 
       if (hash) {
         setActiveTxHash(hash);
         addToast({
           type: 'pending',
-          title: 'กำลังส่งมอบเงินให้มูลนิธิ...',
+          title: 'กำลังส่งมอบเงินมัดจำ...',
           message: 'กรุณารอสักครู่ กำลังยืนยันธุรกรรมบนเครือข่าย Sepolia',
           txHash: hash,
         });
@@ -237,7 +487,7 @@ export default function App() {
       if (!msg.includes('User rejected')) {
         addToast({
           type: 'error',
-          title: 'เกิดข้อผิดพลาดในการส่งมอบเงินบริจาค',
+          title: 'เกิดข้อผิดพลาดในการส่งมอบเงินมัดจำ',
           message: msg,
         });
       }
@@ -272,13 +522,13 @@ export default function App() {
               </div>
               <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                 มัดจำเป้าหมายชีวิตด้วย ETH <br />
-                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-200 bg-clip-text text-transparent">
-                  ทำสำเร็จได้คืน ไม่สำเร็จเงินบริจาคมูลนิธิ
+                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300 bg-clip-text text-transparent">
+                  ทำสำเร็จได้คืน 100% + รับโบนัสเหรียญ WTC
                 </span>
               </h2>
               <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                 สร้างวินัยให้ตัวเองด้วย Smart Contract บนเครือข่าย Sepolia เมื่อคุณล็อคเงินมัดจำ
-                พลังของเงื่อนไขบล็อกเชนจะผลักดันให้คุณทำให้สำเร็จ ถ้าทำสำเร็จรับเงินคืนเต็มจำนวน!
+                พลังของบล็อกเชนจะผลักดันให้คุณทำให้สำเร็จ ถ้าทำสำเร็จรับเงินคืนเต็มจำนวนพร้อมโบนัสเหรียญ WTC (1 ETH = 10 WTC)!
               </p>
             </div>
 
@@ -298,7 +548,7 @@ export default function App() {
           {/* Stats Dashboard */}
           {isConnected && (
             <div className="mt-8 border-t border-slate-800/80 pt-6">
-              <StatsDashboard goals={userGoals} now={now} />
+              <StatsDashboard goals={allGoals} now={now} />
             </div>
           )}
         </section>
@@ -352,7 +602,7 @@ export default function App() {
                   <History className="h-4 w-4" />
                   <span>ประวัติสำเร็จ & บริจาค</span>
                   <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300 font-mono">
-                    {historyGoals.length}
+                    {historyBadgeCount}
                   </span>
                 </button>
               </div>
@@ -440,15 +690,10 @@ export default function App() {
                 ) : (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {displayedHistoryGoals.map((g) => (
-                      <GoalCard
+                      <HistoryCard
                         key={g.id.toString()}
                         goal={g}
                         now={now}
-                        isOwner={true}
-                        onOpenProofModal={(id, title) => setProofModalData({ goalId: id, title })}
-                        onRefund={handleRefund}
-                        onDonate={handleDonate}
-                        isBusy={isBusy}
                       />
                     ))}
                   </div>

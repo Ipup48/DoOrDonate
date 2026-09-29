@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useBalance, useChainId, useSwitchChain, useReadContract } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
 import { shortenAddress } from '@/lib/formatters';
-import { ETHERSCAN_ADDRESS } from '@/lib/contract';
-import { Wallet, LogOut, ExternalLink, Copy, Check, ChevronDown, ShieldAlert, Sparkles } from 'lucide-react';
+import { ETHERSCAN_ADDRESS, WTC_TOKEN_ADDRESS, WTC_ABI, addWtcTokenToWallet } from '@/lib/contract';
+import { formatEther } from 'viem';
+import { Wallet, LogOut, ExternalLink, Copy, Check, ChevronDown, ShieldAlert, Sparkles, Plus, Coins } from 'lucide-react';
 
 interface NavbarProps {
   onOpenSettings: () => void;
@@ -17,25 +18,39 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
 
+  // ดึงยอดเงิน Sepolia ETH
   const { data: balanceData } = useBalance({
     address,
     chainId: sepolia.id,
   });
 
+  // ดึงยอดเหรียญ WTC Token (ERC-20 Reward Token)
+  const { data: wtcBalanceRaw, isLoading: isWtcLoading, refetch: refetchWtc } = useReadContract({
+    address: WTC_TOKEN_ADDRESS,
+    abi: WTC_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: Boolean(address),
+    },
+  });
+
+  const wtcBalance = wtcBalanceRaw ? parseFloat(formatEther(wtcBalanceRaw as bigint)) : 0;
+
   const [copied, setCopied] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [tokenAdded, setTokenAdded] = useState(false);
 
   const isSepolia = chainId === sepolia.id;
 
   const handleConnect = async () => {
-    // ตรวจสอบว่าเบราว์เซอร์มี MetaMask หรือไม่
     const hasMetaMask = typeof window !== 'undefined' && Boolean((window as any).ethereum?.isMetaMask);
     if (!hasMetaMask) {
       onOpenMetaMaskInstallModal();
       return;
     }
 
-    // เชื่อมต่อ MetaMask โดยตรง (ไม่มีหน้าต่าง "เรียนรู้เพิ่มเติม" / RainbowKit มารบกวน)
     const metaMaskConnector = connectors.find((c) => c.id === 'metaMask' || c.id === 'injected') || connectors[0];
     if (metaMaskConnector) {
       connect({ connector: metaMaskConnector });
@@ -47,6 +62,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
       navigator.clipboard.writeText(address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleCopyTokenAddress = () => {
+    navigator.clipboard.writeText(WTC_TOKEN_ADDRESS);
+    setCopiedToken(true);
+    setTimeout(() => setCopiedToken(false), 2000);
+  };
+
+  const handleAddToken = async () => {
+    const success = await addWtcTokenToWallet();
+    if (success) {
+      setTokenAdded(true);
+      setTimeout(() => setTokenAdded(false), 2500);
     }
   };
 
@@ -71,13 +100,34 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
               </span>
             </div>
             <p className="hidden text-xs text-slate-400 sm:block">
-              มัดจำเป้าหมายชีวิตด้วย ETH • สำเร็จได้เงินคืน ไม่สำเร็จเงินบริจาค
+              มัดจำเป้าหมายด้วย ETH • สำเร็จได้เงินคืน + โบนัสเหรียญ WTC
             </p>
           </div>
         </div>
 
         {/* ส่วนกระเป๋าเงิน & สถานะ */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* ป้ายแสดงยอดเหรียญ WTC คงเหลือในกระเป๋า (เมื่อเชื่อมต่อแล้ว) */}
+          {isConnected && isSepolia && (
+            <div
+              onClick={handleAddToken}
+              className="group flex cursor-pointer items-center gap-1.5 rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-950/30 to-amber-500/5 px-2.5 py-1.5 text-xs transition hover:border-amber-500/60 hover:bg-amber-900/30 active:scale-95"
+              title="คลิกเพื่อเพิ่มเหรียญ WTC ลงใน MetaMask ของคุณ"
+            >
+              <span className="text-sm">🪙</span>
+              <div className="flex flex-col text-left">
+                <span className="text-[9px] font-bold text-amber-400/90 leading-none">WTC Token</span>
+                <span className="font-mono text-xs font-extrabold text-amber-200 leading-tight">
+                  {isWtcLoading ? '...' : wtcBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <span className="hidden sm:inline-flex items-center gap-0.5 rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300 group-hover:bg-amber-500/30">
+                <Plus className="h-2.5 w-2.5" />
+                MetaMask
+              </span>
+            </div>
+          )}
+
           {/* ปุ่มตั้งค่า Contract Address */}
           <button
             onClick={onOpenSettings}
@@ -88,13 +138,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
           </button>
 
           {!isConnected ? (
-            /* ปุ่มเชื่อมต่อ MetaMask (รองรับแค่ MetaMask และไม่มีคำว่า "เรียนรู้เพิ่มเติม") */
+            /* ปุ่มเชื่อมต่อ MetaMask */
             <button
               onClick={handleConnect}
               disabled={isPending}
               className="group relative flex items-center gap-2.5 overflow-hidden rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 font-medium text-slate-950 shadow-glow transition hover:from-emerald-400 hover:to-teal-400 hover:shadow-emerald-500/25 active:scale-[0.98] disabled:opacity-60"
             >
-              {/* Fox icon / Metamask styling */}
               <svg className="h-5 w-5 transition group-hover:scale-110" viewBox="0 0 32 32" fill="none">
                 <path d="M29.07 1.83a1.5 1.5 0 0 0-1.78.27l-8.52 7.72H13.2L4.7 2.1A1.5 1.5 0 0 0 2.93 1.83C1.8 2.45 1.6 4.07 2.5 4.9l7.7 7.02L3.15 20.3a1.5 1.5 0 0 0 .28 2.24l11.4 8.24a2 2 0 0 0 2.34 0l11.4-8.24a1.5 1.5 0 0 0 .28-2.24l-7.05-8.38 7.7-7.02c.9-.83.7-2.45-.43-3.07z" fill="#E2761B"/>
                 <path d="M16 23.5l-6.8-4.9 2.5-3.6h8.6l2.5 3.6-6.8 4.9z" fill="#E4761B"/>
@@ -156,25 +205,66 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
                     className="fixed inset-0 z-40"
                     onClick={() => setDropdownOpen(false)}
                   />
-                  <div className="absolute right-0 top-12 z-50 w-64 rounded-xl border border-slate-800 bg-slate-900 p-2 shadow-2xl backdrop-blur-xl">
-                    <div className="border-b border-slate-800 p-2.5">
+                  <div className="absolute right-0 top-12 z-50 w-72 rounded-2xl border border-slate-800 bg-slate-900/95 p-3 shadow-2xl backdrop-blur-2xl">
+                    <div className="border-b border-slate-800 pb-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400">กระเป๋า MetaMask</span>
-                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                        <span className="text-xs font-medium text-slate-400">กระเป๋า MetaMask</span>
+                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-500/20">
                           เชื่อมต่อแล้ว
                         </span>
                       </div>
-                      <p className="mt-1 font-mono text-xs text-slate-200 break-all">{address}</p>
+                      <p className="mt-1.5 font-mono text-xs text-slate-200 break-all bg-slate-950/60 p-2 rounded-xl border border-slate-800/80">
+                        {address}
+                      </p>
                     </div>
 
-                    <div className="space-y-1 p-1">
+                    {/* แสดงยอด WTC Token ใน Dropdown */}
+                    <div className="my-2.5 rounded-xl border border-amber-500/30 bg-amber-950/20 p-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs text-amber-300">
+                          <span>🪙</span>
+                          <span className="font-semibold">โบนัส WTC ในกระเป๋า:</span>
+                        </div>
+                        <span className="font-mono text-xs font-bold text-amber-200">
+                          {wtcBalance.toFixed(2)} WTC
+                        </span>
+                      </div>
+                      <button
+                        onClick={handleAddToken}
+                        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-500/20 py-1.5 text-[11px] font-bold text-amber-300 transition hover:bg-amber-500/30"
+                      >
+                        {tokenAdded ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            <span>เพิ่มเหรียญลง MetaMask แล้ว!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>เพิ่มเหรียญ WTC ลง MetaMask</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="space-y-1 pt-1">
                       <button
                         onClick={handleCopy}
                         className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs text-slate-300 transition hover:bg-slate-800"
                       >
                         <span className="flex items-center gap-2">
                           {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-slate-400" />}
-                          {copied ? 'คัดลอกแล้ว!' : 'คัดลอก Address'}
+                          {copied ? 'คัดลอก Wallet Address แล้ว!' : 'คัดลอก Wallet Address'}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={handleCopyTokenAddress}
+                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs text-slate-300 transition hover:bg-slate-800"
+                      >
+                        <span className="flex items-center gap-2">
+                          {copiedToken ? <Check className="h-3.5 w-3.5 text-amber-400" /> : <Coins className="h-3.5 w-3.5 text-slate-400" />}
+                          {copiedToken ? 'คัดลอก WTC Token Address แล้ว!' : 'คัดลอก WTC Token Address'}
                         </span>
                       </button>
 
@@ -186,7 +276,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
                       >
                         <span className="flex items-center gap-2">
                           <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
-                          ดูบน Sepolia Etherscan
+                          ดูประวัติบน Etherscan
                         </span>
                       </a>
 
@@ -195,7 +285,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSettings, onOpenMetaMaskIn
                           disconnect();
                           setDropdownOpen(false);
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-red-400 transition hover:bg-red-500/10 mt-1 border-t border-slate-800/80 pt-2"
                       >
                         <LogOut className="h-3.5 w-3.5" />
                         ตัดการเชื่อมต่อ
