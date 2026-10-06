@@ -78,7 +78,7 @@ export default function Home() {
     contractAddress !== '0x0000000000000000000000000000000000000000'
   );
 
-  // 1. อ่านเป้าหมายด้วย ABI STATUS (สำหรับสัญญาที่มี status: uint8 หรือ GoalStatus)
+  // 1. อ่านเป้าหมายด้วย ABI STATUS
   const {
     data: rawGoalsStatus,
     refetch: refetchStatus,
@@ -92,7 +92,7 @@ export default function Home() {
     },
   });
 
-  // 2. อ่านเป้าหมายด้วย ABI V2 (สำหรับสัญญาที่มี createdAt ใน struct Goal)
+  // 2. อ่านเป้าหมายด้วย ABI V2
   const {
     data: rawGoalsV2,
     refetch: refetchV2,
@@ -107,7 +107,7 @@ export default function Home() {
     },
   });
 
-  // 3. อ่านเป้าหมายด้วย ABI V1 (สำหรับสัญญาเวอร์ชันเดิมที่ deploy บน Sepolia)
+  // 3. อ่านเป้าหมายด้วย ABI V1
   const {
     data: rawGoalsV1,
     refetch: refetchV1,
@@ -122,7 +122,6 @@ export default function Home() {
     },
   });
 
-  // ดึงยอดคงเหลือ Sepolia ETH เพื่อรองรับการ refetch ทันที
   const { refetch: refetchBalance } = useBalance({
     address,
     chainId: sepolia.id,
@@ -132,7 +131,6 @@ export default function Home() {
     },
   });
 
-  // รวมข้อมูลจากเวอร์ชันที่อ่านสำเร็จ
   const rawGoals = (rawGoalsStatus as any[]) || (rawGoalsV2 as any[]) || (rawGoalsV1 as any[]) || [];
   const isReadingGoals = Boolean(isContractValid && !rawGoalsStatus && !rawGoalsV2 && !rawGoalsV1 && (isReadingV2 || isReadingV1));
 
@@ -141,7 +139,6 @@ export default function Home() {
     await Promise.allSettled([refetchStatus(), refetchV2(), refetchV1(), refetchBalance()]);
   };
 
-  // ดักจับ Event จากบล็อกเชนแบบ Real-time (Auto Sync)
   useWatchContractEvent({
     address: contractAddress,
     abi: ABI,
@@ -174,8 +171,8 @@ export default function Home() {
 
   const allGoals: Goal[] = useMemo(() => {
     const allMeta = getAllGoalsMeta();
-    return rawGoals.map((g: any) => {
-      const id = BigInt(g.id);
+    return rawGoals.map((g: any, index: number) => {
+      const id = g.id !== undefined ? BigInt(g.id) : BigInt(index);
       const meta = allMeta[id.toString()] || {};
       const createdAt = (g.createdAt !== undefined && g.createdAt !== null && BigInt(g.createdAt) > 0n)
         ? BigInt(g.createdAt)
@@ -185,42 +182,21 @@ export default function Home() {
       const rawAmount = g.amount !== undefined ? g.amount : (g.depositAmount !== undefined ? g.depositAmount : 0n);
       const amount = BigInt(rawAmount);
 
-      // คำนวณ status (0: Active, 1: Completed, 2: Failed/Donated)
+      // คำนวณ status โดยยึดบล็อกเชนเป็นหลักเสมอ เพื่อไม่ให้แคชเก่ามาทับ
       let status = 0;
-
-      // 1. ตรวจสอบสถานะที่เสร็จสิ้นจากสัญญาบล็อกเชน (status 1 หรือ 2 หรือ boolean claims)
-      if (g.status !== undefined && g.status !== null && (Number(g.status) === 1 || Number(g.status) === 2)) {
+      if (g.status !== undefined && g.status !== null) {
         status = Number(g.status);
-      } else if (Boolean(g.isClaimed) && !Boolean(g.isCompleted)) {
-        status = 2;
-      } else if (Boolean(g.isClaimed) && Boolean(g.isCompleted)) {
-        status = 1;
-      }
-      // 2. ตรวจสอบสถานะจาก LocalStorage เมื่อธุรกรรมพึ่งสำเร็จ (status 1 หรือ 2)
-      else if (meta.status !== undefined && meta.status !== null && (Number(meta.status) === 1 || Number(meta.status) === 2)) {
-        status = Number(meta.status);
-      } else if (Boolean(meta.isClaimed) && !Boolean(meta.isCompleted)) {
-        status = 2;
-      } else if (Boolean(meta.isClaimed) && Boolean(meta.isCompleted)) {
-        status = 1;
-      } else if (meta.txHashAction && !meta.isCompleted && !g.isCompleted) {
-        status = 2;
-      }
-      // 3. สถานะเริ่มต้น Active (0)
-      else if (g.status !== undefined && g.status !== null) {
-        status = Number(g.status);
-      } else if (meta.status !== undefined && meta.status !== null) {
+      } else if (Boolean(g.isClaimed)) {
+        status = Boolean(g.isCompleted) ? 1 : 2;
+      } else if (meta.status !== undefined && (meta.status === 1 || meta.status === 2)) {
         status = Number(meta.status);
       }
 
       const isCompleted = status === 1;
-      const isClaimed = status === 1 || status === 2 || Boolean(g.isClaimed) || Boolean(meta.isClaimed);
-      const fallbackTitle = (Number(status) === 2 || meta.status === 2 || meta.isExpiredDemo)
-        ? (meta.title || `[Demo] บริจาคเข้ามูลนิธิ #${id.toString()}`)
-        : (meta.isDemo || (g as any).isDemo)
-        ? (meta.title || `[Demo] สาธิตต่อหน้าอาจารย์ (Instant Claim)`)
-        : (meta.title || `[Demo] เป้าหมาย #${id.toString()}`);
-      const displayTitle = g.title || meta.title || fallbackTitle;
+      const isClaimed = status === 1 || status === 2;
+
+      // จัดการชื่อเป้าหมาย
+      const displayTitle = meta.title || g.title || (status === 2 ? `[บริจาค] เป้าหมาย #${id.toString()}` : `เป้าหมาย #${id.toString()}`);
 
       return {
         id,
@@ -239,33 +215,29 @@ export default function Home() {
     });
   }, [rawGoals, metaVersion]);
 
-  // Filter goals of connected user (รองรับทั้ง user และ creator)
   const userGoals = allGoals.filter(
     (g) => address && ((g.user && g.user.toLowerCase() === address.toLowerCase()) || ((g as any).creator && (g as any).creator.toLowerCase() === address.toLowerCase()))
   );
 
-  // แท็บ "เป้าหมายที่กำลังทำ": status === 0 (Active) และยังไม่ได้เคลม
-  // แสดงเป้าหมายของผู้ใช้เป็นหลัก หากไม่มีแต่ในระบบมี ให้แสดง allGoals เพื่อรองรับการนำเสนอเดโม
+  // เป้าหมายที่กำลังทำ: ต้องมี status = 0 เท่านั้น (Active)
   const activeGoals = (userGoals.length > 0 ? userGoals : allGoals).filter(
-    (g) => Number(g.status) === 0 && !g.isClaimed
+    (g) => Number(g.status) === 0
   ).reverse();
 
-  // แท็บ "ประวัติสำเร็จ & บริจาค": รวมทั้ง status 1 (Completed) และ status 2 (Failed / Donated)
+  // ประวัติ: ต้องเป็นเป้าหมายที่จบแล้วเท่านั้น (status 1 หรือ 2)
   const historyGoals = allGoals.filter(
     (g) => Number(g.status) === 1 || Number(g.status) === 2
   ).reverse();
 
-  // ยอดรวมแสดงใน Badge แท็บประวัติ (completed + failed)
   const historyBadgeCount = historyGoals.length;
 
-  // Filter with search
   const filterBySearch = (list: Goal[]) => {
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
     const allMeta = getAllGoalsMeta();
     return list.filter((g) => {
       const meta = allMeta[g.id.toString()];
-      const t = (g.title || meta?.title || (Number(g.status) === 2 ? `[Demo] บริจาคเข้ามูลนิธิ #${g.id.toString()}` : `[Demo] ทำสำเร็จ #${g.id.toString()}`)).toLowerCase();
+      const t = (g.title || meta?.title || `เป้าหมาย #${g.id.toString()}`).toLowerCase();
       return t.includes(q) || g.id.toString().includes(q);
     });
   };
@@ -273,24 +245,20 @@ export default function Home() {
   const displayedActiveGoals = filterBySearch(activeGoals);
   const displayedHistoryGoals = filterBySearch(historyGoals);
 
-  // Contract Write hook
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
 
-  // Transaction Receipt Hook
   const { isLoading: isWaitingTx, isSuccess: isTxSuccess, data: receipt } = useWaitForTransactionReceipt({
     hash: activeTxHash,
   });
 
   const isBusy = isWritePending || isWaitingTx;
 
-  // Handle Transaction Success
   useEffect(() => {
     if (isTxSuccess && activeTxHash) {
       if (actionType === 'create') {
         const pending = getPendingGoalCreation();
         let newGoalId: string | null = null;
 
-        // แยกแกะ goalId จาก Event Logs (รองรับทั้ง V1 และ V2)
         if (receipt) {
           try {
             const logs = parseEventLogs({
@@ -306,14 +274,13 @@ export default function Home() {
           }
         }
 
-        // Fallback หา Goal ID จากจำนวนเป้าหมายในระบบ
         if (!newGoalId) {
-          newGoalId = allGoals.length > 0 ? String(allGoals.length) : '0';
+          newGoalId = rawGoals.length > 0 ? String(rawGoals.length) : '0';
         }
 
         if (pending) {
           saveGoalMeta(newGoalId, {
-            title: pending.title || (pending.isExpiredDemo ? '[Demo] เป้าหมายหมดอายุ (ทดสอบบริจาค)' : '[Demo] สาธิตต่อหน้าอาจารย์ (Instant Claim)'),
+            title: pending.title,
             createdAt: pending.createdAt,
             deadline: pending.deadline,
             charityWallet: pending.charityWallet,
@@ -334,15 +301,15 @@ export default function Home() {
           txHash: activeTxHash,
         });
 
-        // Trigger refetch ทันทีและหน่วงเวลาเล็กน้อยเผื่อ RPC Indexing delay
+        // บังคับเปิดแท็บ active เพื่อให้เห็นการ์ดที่เพิ่งสร้างทันที
+        setTab('active');
         refetch();
-        setTimeout(() => refetch(), 1000);
-        setTimeout(() => refetch(), 3000);
+        setTimeout(() => refetch(), 1500);
       } else if (actionType === 'refund' && actionGoalId !== null) {
         updateGoalStatus(actionGoalId, 1, activeTxHash);
         const currentMeta = getGoalMeta(actionGoalId);
         saveGoalMeta(actionGoalId, {
-          title: currentMeta.title || `[Demo] ทำสำเร็จ #${actionGoalId.toString()}`,
+          title: currentMeta.title || `ทำสำเร็จ #${actionGoalId.toString()}`,
           status: 1,
           isCompleted: true,
           isClaimed: true,
@@ -352,36 +319,28 @@ export default function Home() {
         addToast({
           type: 'success',
           title: 'ขอรับเงินมัดจำคืนสำเร็จ!',
-          message: 'ยินดีด้วยที่คุณทำตามเป้าหมายได้สำเร็จ เงินมัดจำถูกโอนกลับเข้ากระเป๋า พร้อมโบนัสเหรียญ WTC โอนเข้ากระเป๋าของคุณแล้ว',
+          message: 'ยินดีด้วยที่คุณทำตามเป้าหมายได้สำเร็จ เงินมัดจำและโบนัสเหรียญ WTC โอนเข้ากระเป๋าเรียบร้อยแล้ว',
           txHash: activeTxHash,
         });
         refetch();
-        setTimeout(() => refetch(), 1000);
-        setTimeout(() => refetch(), 3000);
       } else if (actionType === 'donate' && actionGoalId !== null) {
-        // อัปเดตสถานะใน LocalStorage เป็น status: 2 (Failed / Donated) ทันที
         updateGoalStatus(actionGoalId, 2, activeTxHash);
-
-        // ตรวจสอบให้แน่ใจว่า Demo Expired ได้รับการบันทึก Title และสถานะ status: 2 อย่างสมบูรณ์
         const currentMeta = getGoalMeta(actionGoalId);
         saveGoalMeta(actionGoalId, {
-          title: currentMeta.title || `[Demo] บริจาคเข้ามูลนิธิ #${actionGoalId.toString()}`,
+          title: currentMeta.title || `บริจาคเข้ามูลนิธิ #${actionGoalId.toString()}`,
           status: 2,
           isCompleted: false,
           isClaimed: true,
           txHashAction: activeTxHash,
         });
-
         setMetaVersion((v) => v + 1);
         addToast({
           type: 'info',
           title: 'ส่งมอบเงินมัดจำเรียบร้อย',
-          message: 'เงินมัดจำได้ถูกส่งมอบให้กับมูลนิธิหรือสมทบเข้ากองทุนผู้ทำสำเร็จตามที่กำหนดแล้ว',
+          message: 'เงินมัดจำได้ถูกส่งมอบให้กับมูลนิธิหรือสมทบเข้ากองทุนเรียบร้อยแล้ว',
           txHash: activeTxHash,
         });
         refetch();
-        setTimeout(() => refetch(), 1000);
-        setTimeout(() => refetch(), 3000);
       }
 
       setActiveTxHash(undefined);
@@ -390,7 +349,6 @@ export default function Home() {
     }
   }, [isTxSuccess, activeTxHash, receipt]);
 
-  // Action: Refund
   const handleRefund = async (goalId: bigint) => {
     try {
       setActionGoalId(goalId);
@@ -403,7 +361,6 @@ export default function Home() {
           abi: ABI,
           functionName: 'completeGoal',
           args: [goalId],
-          gas: 350000n,
         });
       } catch (eComp: any) {
         if (eComp?.message?.includes('User rejected') || eComp?.shortMessage?.includes('User rejected')) {
@@ -414,7 +371,6 @@ export default function Home() {
           abi: ABI,
           functionName: 'completeAndRefund',
           args: [goalId],
-          gas: 350000n,
         });
       }
 
@@ -442,7 +398,6 @@ export default function Home() {
     }
   };
 
-  // Action: Donate
   const handleDonate = async (goalId: bigint) => {
     try {
       setActionGoalId(goalId);
@@ -455,7 +410,6 @@ export default function Home() {
           abi: ABI,
           functionName: 'failGoal',
           args: [goalId],
-          gas: 350000n,
         });
       } catch (eFailGoal: any) {
         if (eFailGoal?.message?.includes('User rejected') || eFailGoal?.shortMessage?.includes('User rejected')) {
@@ -466,7 +420,6 @@ export default function Home() {
           abi: ABI,
           functionName: 'failAndDonate',
           args: [goalId],
-          gas: 350000n,
         });
       }
 
@@ -496,20 +449,16 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500/30 selection:text-emerald-300">
-      {/* Navbar */}
       <Navbar
         onOpenSettings={() => setSettingsModalOpen(true)}
         onOpenMetaMaskInstallModal={() => setMetaMaskModalOpen(true)}
       />
 
-      {/* Network Alert */}
       <NetworkBanner />
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 flex-1">
-        {/* Contract Address Missing Warning */}
         <ContractAddressBanner onAddressUpdated={refetch} />
 
-        {/* Hero Section */}
         <section className="mb-8 rounded-3xl border border-slate-800/80 bg-gradient-to-b from-slate-900/90 to-slate-950/80 p-6 sm:p-8 backdrop-blur-xl relative overflow-hidden">
           <div className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
           <div className="absolute -left-16 -bottom-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl pointer-events-none" />
@@ -545,7 +494,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Stats Dashboard */}
           {isConnected && (
             <div className="mt-8 border-t border-slate-800/80 pt-6">
               <StatsDashboard goals={allGoals} now={now} />
@@ -553,7 +501,6 @@ export default function Home() {
           )}
         </section>
 
-        {/* Not Connected View */}
         {!isConnected && (
           <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 p-12 text-center">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800/60 text-slate-400">
@@ -569,12 +516,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* Connected Goals Management */}
         {isConnected && (
           <div className="space-y-6">
-            {/* Action Bar: Tabs & Search */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-800/80 pb-4">
-              {/* Tabs */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setTab('active')}
@@ -607,7 +551,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Search & Refresh */}
               <div className="flex items-center gap-2">
                 <div className="relative flex-1 sm:w-64">
                   <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
@@ -704,7 +647,6 @@ export default function Home() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500">
         <div className="mx-auto max-w-6xl px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>🎯 DoOrDonate • Smart Contract Self-Commitment Protocol บนเครือข่าย Ethereum Sepolia</p>
@@ -712,7 +654,6 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Modals */}
       <CreateGoalModal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
@@ -760,7 +701,6 @@ export default function Home() {
         onClose={() => setMetaMaskModalOpen(false)}
       />
 
-      {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
