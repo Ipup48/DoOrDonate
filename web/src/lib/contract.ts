@@ -12,7 +12,7 @@ export const WTC_TOKEN_ADDRESS = (
   '0x9A94Fdc6bBd09F48e6efece5B2BD74F853DF6d01'
 ) as `0x${string}`;
 
-// กระเป๋ากองทุน Achievers Reward Pool (ใช้ Address ปกติ 42 หลัก ไม่ติด Precompiled contract)
+// กระเป๋ากองทุน Achievers Reward Pool (ใช้ Address ปกติ 42 หลัก ไม่ติด Precompiled error)
 export const ACHIEVER_POOL_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as `0x${string}`;
 
 // อัตราโบนัส: 1 ETH = 10 WTC
@@ -181,7 +181,7 @@ export interface Charity {
   isPool?: boolean;
 }
 
-// รายชื่อมูลนิธิที่ใช้ Address กระเป๋าจริงความยาว 42 หลัก
+// รายชื่อมูลนิธิที่ใช้ Address ปกติ 42 หลัก (ไม่ชนระบบ Precompile)
 export const CHARITIES: Charity[] = [
   {
     name: '🏆 กองทุนเงินมัดจำสำหรับผู้ที่ทำสำเร็จ (Achievers Reward Pool)',

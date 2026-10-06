@@ -116,10 +116,10 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
       return setError('กรุณาเชื่อมต่อกระเป๋า MetaMask ก่อนทำรายการ');
     }
 
-    // ดึง Contract Address ที่ตั้งไว้สดๆ ทันทีที่กดส่ง
+    // ดึง Contract Address ปัจจุบันทันทีที่กดส่ง
     const currentContract = getContractAddress();
-    if (!currentContract || currentContract === '0x0000000000000000000000000000000000000000') {
-      return setError('ยังไม่ได้ระบุ Contract Address ของ DoOrDonate (กรุณาตั้งค่าที่ปุ่ม ⚙️ ด้านบนขวา)');
+    if (!currentContract || currentContract === '0x0000000000000000000000000000000000000000' || !isAddress(currentContract)) {
+      return setError('ยังไม่ได้ระบุ Contract Address ของ DoOrDonate (กรุณาตั้งค่าที่ปุ่ม ⚙️️ ด้านบนขวา)');
     }
 
     const charityAddress = selectedCharity;
@@ -149,7 +149,12 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
 
       const nowSec = Math.floor(Date.now() / 1000);
       const createdAtSec = isExpiredDemo ? nowSec - 86400 : nowSec;
-      const deadlineSec = isExpiredDemo ? nowSec - 1 : (isInstantDemo ? nowSec + 300 : nowSec + Number(durationInDays) * 86400);
+      // คำนวณ Deadline สำหรับเป้าหมายปกติ: เวลาปัจจุบัน + จำนวนวัน (วินาที)
+      const deadlineSec = isExpiredDemo
+        ? nowSec - 1
+        : isInstantDemo
+        ? nowSec + 300
+        : nowSec + Number(durationInDays) * 86400;
 
       setPendingGoalCreation({
         title: targetTitle,
@@ -162,11 +167,11 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
 
       let hash: `0x${string}` | undefined;
 
-      // ปล่อยให้ wagmi/viem และ MetaMask ประมาณค่า Gas จริงตามระบบอัตโนมัติ (ไม่ฟิกซ์ gas: 600000n)
+      // ปล่อยให้ wagmi/viem และ MetaMask ประเมินค่า Gas จริงอัตโนมัติ (ไม่ล็อก gas: 600000n)
       if (isExpiredDemo) {
         try {
           hash = await writeContractAsync({
-            address: currentContract as `0x${string}`,
+            address: currentContract,
             abi: ABI,
             functionName: 'createExpiredDemoGoal',
             args: [charityAddress as `0x${string}`],
@@ -175,7 +180,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
         } catch (eExp: any) {
           console.warn('createExpiredDemoGoal failed, fallback to createGoal:', eExp);
           hash = await writeContractAsync({
-            address: currentContract as `0x${string}`,
+            address: currentContract,
             abi: ABI,
             functionName: 'createGoal',
             args: [1n, charityAddress as `0x${string}`],
@@ -185,7 +190,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
       } else if (isInstantDemo) {
         try {
           hash = await writeContractAsync({
-            address: currentContract as `0x${string}`,
+            address: currentContract,
             abi: ABI,
             functionName: 'createDemoGoal',
             args: [charityAddress as `0x${string}`],
@@ -194,7 +199,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
         } catch (eDemo: any) {
           console.warn('createDemoGoal failed, fallback to createGoal:', eDemo);
           hash = await writeContractAsync({
-            address: currentContract as `0x${string}`,
+            address: currentContract,
             abi: ABI,
             functionName: 'createGoal',
             args: [1n, charityAddress as `0x${string}`],
@@ -203,7 +208,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
         }
       } else {
         hash = await writeContractAsync({
-          address: currentContract as `0x${string}`,
+          address: currentContract,
           abi: ABI,
           functionName: 'createGoal',
           args: [durationInDays, charityAddress as `0x${string}`],
