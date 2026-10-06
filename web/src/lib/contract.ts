@@ -32,7 +32,8 @@ export function getContractAddress(): `0x${string}` {
       return custom as `0x${string}`;
     }
   }
-  return (ENV_CONTRACT_ADDRESS as `0x${string}`) || '0x0000000000000000000000000000000000000000';
+  // ใส่ Contract Address ใหม่ล่าสุดเป็นค่า Default ป้องกันค่าว่าง
+  return (ENV_CONTRACT_ADDRESS as `0x${string}`) || '0xd0e8f57937e918De053609e435831b88020e8022';
 }
 
 export function setCustomContractAddress(address: string) {
@@ -178,7 +179,7 @@ export async function addWtcTokenToWallet(): Promise<boolean> {
   }
 }
 
-// รายชื่อมูลนิธิ/กองทุนให้เลือก (เปลี่ยน Address ทั้งหมดเป็นกระเป๋ามาตรฐาน 42 หลัก)
+// รายชื่อมูลนิธิ/กองทุนให้เลือก (เป็น Address กระเป๋า 42 หลัก)
 export interface Charity {
   name: string;
   category: string;
