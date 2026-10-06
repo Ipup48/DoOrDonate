@@ -12,8 +12,8 @@ export const WTC_TOKEN_ADDRESS = (
   '0x9A94Fdc6bBd09F48e6efece5B2BD74F853DF6d01'
 ) as `0x${string}`;
 
-// Address กองทุนเงินมัดจำสำหรับผู้ที่ทำสำเร็จ (Achievers Pool)
-export const ACHIEVER_POOL_ADDRESS = '0x0000000000000000000000000000000000000004' as `0x${string}`;
+// กระเป๋ากองทุนและมูลนิธิทดสอบบน Sepolia (เป็น Address จริง 42 หลัก ไม่ติด Precompiled error อีกต่อไป)
+export const ACHIEVER_POOL_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as `0x${string}`;
 
 // อัตราโบนัส: 1 ETH = 10 WTC
 export const WTC_REWARD_RATE = 10;
@@ -178,7 +178,7 @@ export async function addWtcTokenToWallet(): Promise<boolean> {
   }
 }
 
-// รายชื่อมูลนิธิ/กองทุนให้เลือก
+// รายชื่อมูลนิธิ/กองทุนให้เลือก (เปลี่ยน Address ทั้งหมดเป็นกระเป๋ามาตรฐาน 42 หลัก)
 export interface Charity {
   name: string;
   category: string;
@@ -198,25 +198,25 @@ export const CHARITIES: Charity[] = [
   {
     name: 'มูลนิธิกระจกเงา (The Mirror Foundation)',
     category: 'ช่วยเหลือสังคมและคนไร้ที่พึ่ง',
-    address: '0x000000000000000000000000000000000000dEaD',
+    address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
     description: 'ช่วยเหลือผู้ด้อยโอกาส เด็กหาย และสนับสนุนชุมชนยากไร้',
   },
   {
     name: 'มูลนิธิรามาธิบดี (Ramathibodi Foundation)',
     category: 'การแพทย์และสาธารณสุข',
-    address: '0x0000000000000000000000000000000000000001',
+    address: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
     description: 'จัดซื้อเครื่องมือแพทย์และช่วยเหลือผู้ป่วยยากไร้',
   },
   {
     name: 'สภากาชาดไทย (The Thai Red Cross Society)',
     category: 'บรรเทาทุกข์และบริจาคโลหิต',
-    address: '0x0000000000000000000000000000000000000002',
+    address: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
     description: 'บรรเทาทุกข์ผู้ประสบภัย ส่งเสริมคุณภาพชีวิต และการบริการโลหิต',
   },
   {
     name: 'มูลนิธิสืบนาคะเสถียร (Seub Nakhasathien Foundation)',
     category: 'สิ่งแวดล้อมและสัตว์ป่า',
-    address: '0x0000000000000000000000000000000000000003',
+    address: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
     description: 'พิทักษ์ป่าไม้ อนุรักษ์ทรัพยากรธรรมชาติและสัตว์ป่าไทย',
   },
 ];

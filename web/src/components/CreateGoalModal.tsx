@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { parseEther, isAddress } from 'viem';
-import { CHARITIES, getContractAddress, ABI, ABI_V2, calculateWtcBonus, WTC_REWARD_RATE } from '@/lib/contract';
+import { CHARITIES, getContractAddress, ABI, calculateWtcBonus, WTC_REWARD_RATE } from '@/lib/contract';
 import { setPendingGoalCreation } from '@/lib/storage';
 import { X, Sparkles, AlertCircle, Heart, Lock, Calendar, Coins, ArrowUpRight, Loader2, Gift, Zap } from 'lucide-react';
 import { useAccount, useWriteContract, useBalance, useChainId, useSwitchChain } from 'wagmi';
@@ -76,7 +76,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
     const isInstantDemo = demoMode === 'instant';
     const isExpiredDemo = demoMode === 'expired';
 
-    // กำหนด Title ให้ชัดเจน โดยเฉพาะกรณีโหมด Demo
     let targetTitle = title.trim();
     if (!targetTitle) {
       if (isExpiredDemo) {
@@ -164,7 +163,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
       let hash: `0x${string}` | undefined;
 
       if (isExpiredDemo) {
-        // ลองเรียก createExpiredDemoGoal ก่อน (สำหรับสัญญาที่รองรับ)
         try {
           hash = await writeContractAsync({
             address: currentContract as `0x${string}`,
@@ -172,22 +170,20 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             functionName: 'createExpiredDemoGoal',
             args: [charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 350000n,
+            gas: 600000n,
           });
         } catch (eExp: any) {
           console.warn('createExpiredDemoGoal failed, fallback to createGoal:', eExp);
-          // Fallback สำหรับสัญญาเดิม: ส่ง createGoal 1 วัน โดย pending metadata ติด isExpiredDemo: true
           hash = await writeContractAsync({
             address: currentContract as `0x${string}`,
             abi: ABI,
             functionName: 'createGoal',
             args: [1n, charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 350000n,
+            gas: 600000n,
           });
         }
       } else if (isInstantDemo) {
-        // ลองเรียก createDemoGoal ก่อน (สำหรับสัญญา DoOrDonate.sol ล่าสุด)
         try {
           hash = await writeContractAsync({
             address: currentContract as `0x${string}`,
@@ -195,7 +191,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             functionName: 'createDemoGoal',
             args: [charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 350000n,
+            gas: 600000n,
           });
         } catch (eDemo: any) {
           console.warn('createDemoGoal failed, fallback to createGoal:', eDemo);
@@ -203,9 +199,9 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             address: currentContract as `0x${string}`,
             abi: ABI,
             functionName: 'createGoal',
-            args: [0n, charityAddress as `0x${string}`],
+            args: [1n, charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 350000n,
+            gas: 600000n,
           });
         }
       } else {
@@ -215,7 +211,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
           functionName: 'createGoal',
           args: [durationInDays, charityAddress as `0x${string}`],
           value: parseEther(amountNum.toString()),
-          gas: 350000n,
+          gas: 600000n,
         });
       }
 
