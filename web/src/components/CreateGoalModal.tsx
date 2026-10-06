@@ -19,7 +19,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
   const { address } = useAccount();
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const contractAddress = getContractAddress();
 
   const { data: balanceData } = useBalance({
     address,
@@ -117,9 +116,10 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
       return setError('กรุณาเชื่อมต่อกระเป๋า MetaMask ก่อนทำรายการ');
     }
 
-    const currentContract = contractAddress || getContractAddress();
+    // ดึง Contract Address ที่ตั้งไว้สดๆ ทันทีที่กดส่ง
+    const currentContract = getContractAddress();
     if (!currentContract || currentContract === '0x0000000000000000000000000000000000000000') {
-      return setError('ยังไม่ได้ระบุ Contract Address ของ DoOrDonate (กรุณาตั้งค่าที่ปุ่ม ⚙️️ ด้านบนขวา)');
+      return setError('ยังไม่ได้ระบุ Contract Address ของ DoOrDonate (กรุณาตั้งค่าที่ปุ่ม ⚙️ ด้านบนขวา)');
     }
 
     const charityAddress = selectedCharity;
@@ -162,6 +162,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
 
       let hash: `0x${string}` | undefined;
 
+      // ปล่อยให้ wagmi/viem และ MetaMask ประมาณค่า Gas จริงตามระบบอัตโนมัติ (ไม่ฟิกซ์ gas: 600000n)
       if (isExpiredDemo) {
         try {
           hash = await writeContractAsync({
@@ -170,7 +171,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             functionName: 'createExpiredDemoGoal',
             args: [charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 600000n,
           });
         } catch (eExp: any) {
           console.warn('createExpiredDemoGoal failed, fallback to createGoal:', eExp);
@@ -180,7 +180,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             functionName: 'createGoal',
             args: [1n, charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 600000n,
           });
         }
       } else if (isInstantDemo) {
@@ -191,7 +190,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             functionName: 'createDemoGoal',
             args: [charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 600000n,
           });
         } catch (eDemo: any) {
           console.warn('createDemoGoal failed, fallback to createGoal:', eDemo);
@@ -201,7 +199,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
             functionName: 'createGoal',
             args: [1n, charityAddress as `0x${string}`],
             value: parseEther(amountNum.toString()),
-            gas: 600000n,
           });
         }
       } else {
@@ -211,7 +208,6 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
           functionName: 'createGoal',
           args: [durationInDays, charityAddress as `0x${string}`],
           value: parseEther(amountNum.toString()),
-          gas: 600000n,
         });
       }
 

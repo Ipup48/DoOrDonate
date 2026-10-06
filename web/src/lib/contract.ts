@@ -12,7 +12,7 @@ export const WTC_TOKEN_ADDRESS = (
   '0x9A94Fdc6bBd09F48e6efece5B2BD74F853DF6d01'
 ) as `0x${string}`;
 
-// กระเป๋ากองทุนและมูลนิธิทดสอบบน Sepolia (เป็น Address จริง 42 หลัก ไม่ติด Precompiled error อีกต่อไป)
+// กระเป๋ากองทุน Achievers Reward Pool (ใช้ Address ปกติ 42 หลัก ไม่ติด Precompiled contract)
 export const ACHIEVER_POOL_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as `0x${string}`;
 
 // อัตราโบนัส: 1 ETH = 10 WTC
@@ -32,7 +32,7 @@ export function getContractAddress(): `0x${string}` {
       return custom as `0x${string}`;
     }
   }
-  return (ENV_CONTRACT_ADDRESS as `0x${string}`) || '0x0000000000000000000000000000000000000000';
+  return (ENV_CONTRACT_ADDRESS as `0x${string}`) || '0xb11082522409890d79666014e7a7605d8f76a760';
 }
 
 export function setCustomContractAddress(address: string) {
@@ -49,7 +49,7 @@ export function setCustomContractAddress(address: string) {
 export const ETHERSCAN_TX = 'https://sepolia.etherscan.io/tx/';
 export const ETHERSCAN_ADDRESS = 'https://sepolia.etherscan.io/address/';
 
-// ABI ของ Smart Contract DoOrDonate (V2: มี createdAt ใน struct Goal)
+// ABI ของ Smart Contract DoOrDonate (V2)
 export const ABI_V2 = parseAbi([
   'function createGoal(uint256 _durationInDays, address _charityWallet) payable',
   'function createDemoGoal(address _charityWallet) payable',
@@ -75,7 +75,7 @@ export const ABI_V2 = parseAbi([
   'event RewardDeposited(address indexed sender, uint256 amount)'
 ]);
 
-// ABI ของ Smart Contract DoOrDonate (V1: สัญญาเวอร์ชันดั้งเดิมที่ไม่มี createdAt ใน struct Goal)
+// ABI ของ Smart Contract DoOrDonate (V1)
 export const ABI_V1 = parseAbi([
   'function createGoal(uint256 _durationInDays, address _charityWallet) payable',
   'function completeAndRefund(uint256 _goalId)',
@@ -98,14 +98,13 @@ export const ABI_V1 = parseAbi([
   'event RewardDeposited(address indexed sender, uint256 amount)'
 ]);
 
-// Enum สถานะของเป้าหมายใน Smart Contract
 export enum GoalStatus {
   Active = 0,
   Completed = 1,
   Failed = 2,
 }
 
-// ABI ของ Smart Contract DoOrDonate (V3: มี uint8 status: 0 = Active, 1 = Completed, 2 = Failed)
+// ABI ของ Smart Contract DoOrDonate (V3: มี status uint8)
 export const ABI_STATUS = parseAbi([
   'function createGoal(uint256 _durationInDays, address _charityWallet) payable',
   'function createDemoGoal(address _charityWallet) payable',
@@ -132,7 +131,6 @@ export const ABI_STATUS = parseAbi([
   'event RewardDeposited(address indexed sender, uint256 amount)'
 ]);
 
-// รวม Events ทั้งหมดเพื่อรองรับการ parse log จากทุกเวอร์ชัน
 export const ABI_EVENTS = parseAbi([
   'event GoalCreated(uint256 indexed goalId, address indexed user, uint256 amount, uint256 createdAt, uint256 deadline, address charityWallet)',
   'event GoalCreated(uint256 indexed goalId, address indexed user, uint256 amount, uint256 deadline, address charityWallet)',
@@ -141,10 +139,8 @@ export const ABI_EVENTS = parseAbi([
   'event GoalFailed(uint256 indexed goalId, address indexed user, address charityWallet, uint256 amount)'
 ]);
 
-// กำหนด ABI หลักเป็น ABI_STATUS เพื่อให้อ่าน status: uint8 ได้ถูกต้อง 100%
 export const ABI = ABI_STATUS;
 
-// ABI ของ ERC-20 Reward Token (WTC)
 export const WTC_ABI = parseAbi([
   'function name() view returns (string)',
   'function symbol() view returns (string)',
@@ -156,7 +152,6 @@ export const WTC_ABI = parseAbi([
   'event Transfer(address indexed from, address indexed to, uint256 value)'
 ]);
 
-// ฟังก์ชันเพิ่มเหรียญ WTC เข้าสู่ MetaMask
 export async function addWtcTokenToWallet(): Promise<boolean> {
   if (typeof window === 'undefined' || !(window as any).ethereum) return false;
   try {
@@ -178,7 +173,6 @@ export async function addWtcTokenToWallet(): Promise<boolean> {
   }
 }
 
-// รายชื่อมูลนิธิ/กองทุนให้เลือก (เปลี่ยน Address ทั้งหมดเป็นกระเป๋ามาตรฐาน 42 หลัก)
 export interface Charity {
   name: string;
   category: string;
@@ -187,6 +181,7 @@ export interface Charity {
   isPool?: boolean;
 }
 
+// รายชื่อมูลนิธิที่ใช้ Address กระเป๋าจริงความยาว 42 หลัก
 export const CHARITIES: Charity[] = [
   {
     name: '🏆 กองทุนเงินมัดจำสำหรับผู้ที่ทำสำเร็จ (Achievers Reward Pool)',
@@ -212,11 +207,5 @@ export const CHARITIES: Charity[] = [
     category: 'บรรเทาทุกข์และบริจาคโลหิต',
     address: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
     description: 'บรรเทาทุกข์ผู้ประสบภัย ส่งเสริมคุณภาพชีวิต และการบริการโลหิต',
-  },
-  {
-    name: 'มูลนิธิสืบนาคะเสถียร (Seub Nakhasathien Foundation)',
-    category: 'สิ่งแวดล้อมและสัตว์ป่า',
-    address: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
-    description: 'พิทักษ์ป่าไม้ อนุรักษ์ทรัพยากรธรรมชาติและสัตว์ป่าไทย',
   },
 ];
