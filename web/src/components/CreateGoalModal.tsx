@@ -119,7 +119,7 @@ export const CreateGoalModal: React.FC<Props> = ({ isOpen, onClose, onTransactio
 
     const currentContract = contractAddress || getContractAddress();
     if (!currentContract || currentContract === '0x0000000000000000000000000000000000000000') {
-      return setError('ยังไม่ได้ระบุ Contract Address ของ DoOrDonate (กรุณาตั้งค่าที่ปุ่ม ⚙️ ด้านบนขวา)');
+      return setError('ยังไม่ได้ระบุ Contract Address ของ DoOrDonate (กรุณาตั้งค่าที่ปุ่ม ⚙️️ ด้านบนขวา)');
     }
 
     const charityAddress = selectedCharity;
